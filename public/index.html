@@ -104,6 +104,15 @@ function wsURL() {
 }
 
 async function start() {
+  // Захват экрана со звуком требует «защищённого контекста»: localhost или HTTPS.
+  // По IP поверх http (например http://192.168.x.x) navigator.mediaDevices нет.
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    const viaIp = location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+    setStatus(viaIp
+      ? `Открой страницу ПК через http://localhost:${location.port || 47823}/ — по IP захват экрана недоступен`
+      : 'Этот браузер не поддерживает захват экрана (нужен Chrome или Edge)', 'err');
+    return;
+  }
   try {
     // video:true обязателен — Chrome показывает чекбокс "звук" только для display-захвата.
     stream = await navigator.mediaDevices.getDisplayMedia({
@@ -111,7 +120,10 @@ async function start() {
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     });
   } catch (e) {
-    setStatus('Отменено пользователем', 'err');
+    // NotAllowedError — пользователь действительно закрыл окно выбора.
+    // Остальное (NotFoundError, NotSupportedError и т.п.) показываем как есть.
+    if (e && e.name === 'NotAllowedError') setStatus('Отменено пользователем', 'err');
+    else setStatus('Не удалось начать захват: ' + (e && e.message ? e.message : e), 'err');
     return;
   }
 
