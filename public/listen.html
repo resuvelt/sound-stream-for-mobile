@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sound Stream — Слушать</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: radial-gradient(circle at 70% 20%, #1e293b, #0f172a);
+    color: #e2e8f0; padding: 24px;
+  }
+  .card {
+    background: #1e293b; border: 1px solid #334155; border-radius: 16px;
+    padding: 32px; max-width: 440px; width: 100%; text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  }
+  h1 { margin: 0 0 24px; font-size: 22px; }
+  .play {
+    width: 120px; height: 120px; border-radius: 50%; border: 0; cursor: pointer;
+    background: #22c55e; color: #fff; font-size: 44px; transition: .15s;
+    display: flex; align-items: center; justify-content: center; margin: 0 auto;
+  }
+  .play:hover { background: #16a34a; transform: scale(1.05); }
+  .play.playing { background: #ef4444; }
+  .play:disabled { background: #475569; cursor: not-allowed; transform: none; }
+  .status {
+    margin-top: 24px; padding: 12px 14px; border-radius: 10px; font-size: 14px;
+    background: #0f172a; border: 1px solid #334155;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #64748b; flex: none; }
+  .dot.live { background: #22c55e; box-shadow: 0 0 10px #22c55e; }
+  .dot.err { background: #ef4444; }
+  .row { margin-top: 20px; display: flex; align-items: center; gap: 12px; }
+  .row label { font-size: 13px; color: #94a3b8; white-space: nowrap; }
+  input[type=range] { width: 100%; }
+  .hint { margin-top: 16px; font-size: 13px; color: #94a3b8; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>🔊 Слушать звук ПК</h1>
+
+    <button id="play" class="play" disabled>▶</button>
+
+    <div class="status">
+      <span id="dot" class="dot"></span>
+      <span id="statusText">Подключение…</span>
+    </div>
+
+    <div class="row">
+      <label>Громкость</label>
+      <input id="vol" type="range" min="0" max="1" step="0.01" value="1" />
+    </div>
+
+    <p class="hint">Нажми ▶, чтобы начать воспроизведение живого потока.</p>
+  </div>
+
+<script src="/nosleep.js"></script>
+<script>
+const playBtn = document.getElementById('play');
+const dot = document.getElementById('dot');
+const statusText = document.getElementById('statusText');
+const vol = document.getElementById('vol');
+
+let ws = null;
+let audioCtx = null;
+let gainNode = null;
+let streamLive = false;
+let started = false;
+
+// Не даём экрану телефона гаснуть, пока идёт прослушивание.
+const noSleep = (typeof NoSleep !== 'undefined') ? new NoSleep() : null;
+
+let sampleRate = 48000;   // обновляется из format-сообщения источника
+let nextTime = 0;         // момент (в часах audioCtx) для следующего кусочка
+const JITTER = 0.06;      // целевой буфер, сек (мало — т.к. LAN почти без потерь)
+const MAX_LATENCY = 0.3;  // аварийный порог: больше — мгновенный прыжок к живому
+
+function setStatus(text, cls) {
+  statusText.textContent = text;
+  dot.className = 'dot' + (cls ? ' ' + cls : '');
+}
+
+function wsURL() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}/?role=listener`;
+}
+
+function connect() {
+  ws = new WebSocket(wsURL());
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => setStatus('Подключено. Ожидание эфира…');
+
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === 'string') {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'format') sampleRate = msg.sampleRate || sampleRate;
+        if (msg.type === 'live') { streamLive = true; onLive(); }
+        if (msg.type === 'offline') { streamLive = false; onOffline(); }
+      } catch {}
+      return;
+    }
+    if (started && audioCtx) schedulePCM(ev.data);
+  };
+
+  ws.onclose = () => {
+    setStatus('Соединение потеряно. Переподключение…', 'err');
+    if (!started) playBtn.disabled = true;
+    setTimeout(connect, 1500);
+  };
+  ws.onerror = () => setStatus('Ошибка соединения', 'err');
+}
+
+function onLive() {
+  setStatus(started ? 'Воспроизведение' : 'Эфир идёт — нажми ▶', 'live');
+  if (!started) playBtn.disabled = false;
+}
+
+function onOffline() {
+  setStatus('ПК не в эфире', 'err');
+  if (!started) playBtn.disabled = true;
+}
+
+function startPlayback() {
+  if (started) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  gainNode = audioCtx.createGain();
+  gainNode.gain.value = parseFloat(vol.value);
+  gainNode.connect(audioCtx.destination);
+  audioCtx.resume();           // обязательно по жесту пользователя (особенно iOS)
+  if (noSleep) { try { noSleep.enable(); } catch (e) {} }  // держим экран включённым
+  nextTime = 0;
+  started = true;
+  playBtn.textContent = '⏸';
+  playBtn.classList.add('playing');
+  setStatus(streamLive ? 'Воспроизведение' : 'Ожидание эфира…', streamLive ? 'live' : '');
+}
+
+// Int16 PCM (моно) -> запланированное воспроизведение через Web Audio.
+function schedulePCM(arrayBuffer) {
+  const i16 = new Int16Array(arrayBuffer);
+  const n = i16.length;
+  if (n === 0) return;
+  const buffer = audioCtx.createBuffer(1, n, sampleRate);
+  const f32 = buffer.getChannelData(0);
+  for (let i = 0; i < n; i++) f32[i] = i16[i] / 0x8000;
+
+  const now = audioCtx.currentTime;
+  // Старт/недобор буфера или авария (слишком большое отставание) — задаём запас.
+  if (nextTime < now + 0.005 || nextTime - now > MAX_LATENCY) nextTime = now + JITTER;
+
+  // Плавная коррекция задержки скоростью (±%, на слух почти незаметно):
+  // отстаём от живого края — чуть ускоряемся, подобрались слишком близко — тормозим.
+  const lead = nextTime - now;
+  let rate = 1;
+  if (lead > JITTER + 0.05) rate = 1.02;
+  else if (lead < JITTER - 0.03) rate = 0.99;
+
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  src.playbackRate.value = rate;
+  src.connect(gainNode);
+  src.start(nextTime);
+  nextTime += buffer.duration / rate; // реальная длительность с учётом скорости
+}
+
+function stopPlayback() {
+  started = false;
+  playBtn.textContent = '▶';
+  playBtn.classList.remove('playing');
+  if (audioCtx) audioCtx.close().catch(() => {});
+  audioCtx = null;
+  gainNode = null;
+  if (noSleep) { try { noSleep.disable(); } catch (e) {} }  // отпускаем экран
+  setStatus(streamLive ? 'Эфир идёт — нажми ▶' : 'ПК не в эфире', streamLive ? 'live' : 'err');
+}
+
+playBtn.addEventListener('click', () => {
+  if (started) stopPlayback(); else startPlayback();
+});
+vol.addEventListener('input', () => { if (gainNode) gainNode.gain.value = parseFloat(vol.value); });
+
+connect();
+</script>
+</body>
+</html>

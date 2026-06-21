@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sound Stream — Источник (ПК)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: radial-gradient(circle at 30% 20%, #1e293b, #0f172a);
+    color: #e2e8f0; padding: 24px;
+  }
+  .card {
+    background: #1e293b; border: 1px solid #334155; border-radius: 16px;
+    padding: 32px; max-width: 440px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  .sub { margin: 0 0 24px; color: #94a3b8; font-size: 14px; }
+  button {
+    width: 100%; padding: 14px; font-size: 16px; font-weight: 600; border: 0;
+    border-radius: 10px; cursor: pointer; transition: .15s; color: #fff;
+  }
+  .start { background: #22c55e; }
+  .start:hover { background: #16a34a; }
+  .stop { background: #ef4444; }
+  .stop:hover { background: #dc2626; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .status {
+    margin-top: 20px; padding: 12px 14px; border-radius: 10px; font-size: 14px;
+    background: #0f172a; border: 1px solid #334155; display: flex; align-items: center; gap: 10px;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #64748b; flex: none; }
+  .dot.live { background: #22c55e; box-shadow: 0 0 10px #22c55e; }
+  .dot.err { background: #ef4444; }
+  .hint { margin-top: 18px; font-size: 13px; color: #94a3b8; line-height: 1.5; }
+  .hint b { color: #e2e8f0; }
+  .count { margin-left: auto; color: #94a3b8; font-size: 13px; }
+  meter { width: 100%; margin-top: 14px; height: 10px; }
+  .lan {
+    margin-top: 20px; padding: 16px; border-radius: 10px; text-align: center;
+    background: #0f172a; border: 1px solid #334155;
+  }
+  .lan .title { font-size: 13px; color: #94a3b8; margin-bottom: 10px; }
+  .lan #qr { display: inline-block; background: #fff; padding: 8px; border-radius: 8px; line-height: 0; }
+  .lan #qr canvas, .lan #qr img { display: block; }
+  .lan .url {
+    margin-top: 12px; font-size: 15px; font-weight: 600; color: #e2e8f0;
+    word-break: break-all; user-select: all;
+  }
+  .lan .alt { margin-top: 8px; font-size: 12px; color: #64748b; word-break: break-all; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>🎙️ Источник звука</h1>
+    <p class="sub">Захват системного звука этого ПК и трансляция на телефон.</p>
+
+    <button id="btn" class="start">Начать трансляцию</button>
+    <meter id="meter" min="0" max="1" value="0" hidden></meter>
+
+    <div class="status">
+      <span id="dot" class="dot"></span>
+      <span id="statusText">Не в эфире</span>
+      <span id="count" class="count"></span>
+    </div>
+
+    <p class="hint">
+      В окне выбора расшаривания включите <b>«Поделиться звуком»</b> (Share audio).
+      Лучше всего работает при выборе <b>вкладки Chrome</b> или <b>всего экрана</b>.
+    </p>
+
+    <div class="lan" id="lan" hidden>
+      <div class="title">📱 Открой на телефоне (та же WiFi):</div>
+      <div id="qr"></div>
+      <div class="url" id="lanUrl"></div>
+      <div class="alt" id="lanAlt"></div>
+    </div>
+  </div>
+
+<script>
+const btn = document.getElementById('btn');
+const dot = document.getElementById('dot');
+const statusText = document.getElementById('statusText');
+const count = document.getElementById('count');
+const meter = document.getElementById('meter');
+
+let ws = null;
+let stream = null;
+let audioCtx = null;
+let sourceNode = null;
+let workletNode = null;
+
+function setStatus(text, cls) {
+  statusText.textContent = text;
+  dot.className = 'dot' + (cls ? ' ' + cls : '');
+}
+
+function wsURL() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}/?role=broadcaster`;
+}
+
+async function start() {
+  try {
+    // video:true обязателен — Chrome показывает чекбокс "звук" только для display-захвата.
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+  } catch (e) {
+    setStatus('Отменено пользователем', 'err');
+    return;
+  }
+
+  const audioTracks = stream.getAudioTracks();
+  if (audioTracks.length === 0) {
+    setStatus('Звук не выбран — включите «Поделиться звуком»', 'err');
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+    return;
+  }
+
+  // ВАЖНО: видеодорожку НЕ останавливаем. При выборе «Весь экран» Chrome
+  // связывает видео и звук в один захват — остановка видео обрывает и звук.
+  const audioStream = new MediaStream(audioTracks);
+
+  // Если пользователь нажмёт "Остановить доступ" в плашке Chrome.
+  audioTracks[0].addEventListener('ended', stop);
+
+  ws = new WebSocket(wsURL());
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = async () => {
+    try {
+      await setupCapture(audioStream);
+    } catch (e) {
+      setStatus('Не удалось запустить захват: ' + e.message, 'err');
+      stop();
+      return;
+    }
+    setStatus('В эфире', 'live');
+    btn.textContent = 'Остановить трансляцию';
+    btn.className = 'stop';
+    meter.hidden = false;
+  };
+
+  ws.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'listeners') count.textContent = msg.count + ' 👂';
+      if (msg.type === 'replaced') { setStatus('Заменён другим источником', 'err'); stop(); }
+    } catch {}
+  };
+
+  ws.onclose = () => { if (audioCtx) stop(); };
+  ws.onerror = () => setStatus('Ошибка соединения', 'err');
+}
+
+// Захват сырого PCM через AudioWorklet (аудио-поток, без глитчей) и отправка
+// Int16-кадрами (моно) на сервер.
+async function setupCapture(audioStream) {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const sampleRate = audioCtx.sampleRate;
+
+  // Сообщаем слушателям формат потока (сервер закеширует для поздних подключений).
+  ws.send(JSON.stringify({ type: 'format', sampleRate, channels: 1 }));
+
+  await audioCtx.audioWorklet.addModule('capture-worklet.js');
+
+  sourceNode = audioCtx.createMediaStreamSource(audioStream);
+  workletNode = new AudioWorkletNode(audioCtx, 'capture-processor', {
+    numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1]
+  });
+
+  workletNode.port.onmessage = (e) => {
+    meter.value = e.data.peak;
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(e.data.pcm);
+  };
+
+  // Worklet ничего не пишет в выход (тишина), поэтому подключение к destination
+  // не даёт дублирования звука на ПК, но поддерживает граф активным.
+  sourceNode.connect(workletNode);
+  workletNode.connect(audioCtx.destination);
+}
+
+function stop() {
+  if (workletNode) { workletNode.port.onmessage = null; workletNode.disconnect(); workletNode = null; }
+  if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+  if (stream) stream.getTracks().forEach(t => t.stop()), stream = null;
+  if (audioCtx) audioCtx.close().catch(() => {}), audioCtx = null;
+  if (ws) ws.close(), ws = null;
+  setStatus('Не в эфире');
+  btn.textContent = 'Начать трансляцию';
+  btn.className = 'start';
+  meter.hidden = true;
+  meter.value = 0;
+  count.textContent = '';
+}
+
+btn.addEventListener('click', () => {
+  if (audioCtx) stop(); else start();
+});
+
+// Показываем LAN-адрес слушателя + QR, чтобы открыть с телефона в той же WiFi.
+(async function showLanLink() {
+  try {
+    const info = await fetch('/info').then(r => r.json());
+    if (!info.addresses || !info.addresses.length) return;
+    const primary = `http://${info.addresses[0]}:${info.port}/listen`;
+    document.getElementById('lan').hidden = false;
+    document.getElementById('lanUrl').textContent = primary;
+    if (info.addresses.length > 1) {
+      document.getElementById('lanAlt').textContent =
+        'Если не открывается, попробуй: ' +
+        info.addresses.slice(1).map(ip => `http://${ip}:${info.port}/listen`).join('  •  ');
+    }
+    // QR рисуется сервером (PNG), без внешних библиотек.
+    const img = document.createElement('img');
+    img.alt = 'QR';
+    img.width = 200; img.height = 200;
+    img.src = '/qr';
+    document.getElementById('qr').appendChild(img);
+  } catch (e) { /* нет сети до сервера — не критично */ }
+})();
+</script>
+</body>
+</html>
