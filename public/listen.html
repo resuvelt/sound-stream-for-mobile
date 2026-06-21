@@ -47,6 +47,10 @@
 
     <button id="play" class="play" disabled>▶</button>
 
+    <!-- Скрытый <audio> — настоящая медиа-дорожка. Через него iOS продолжает
+         играть звук в фоне и с выключенным экраном. -->
+    <audio id="sink" playsinline></audio>
+
     <div class="status">
       <span id="dot" class="dot"></span>
       <span id="statusText">Подключение…</span>
@@ -57,24 +61,24 @@
       <input id="vol" type="range" min="0" max="1" step="0.01" value="1" />
     </div>
 
-    <p class="hint">Нажми ▶, чтобы начать воспроизведение живого потока.</p>
+    <p class="hint">Нажми ▶, чтобы начать. Звук идёт как медиа-дорожка —
+       можно заблокировать телефон или свернуть браузер, воспроизведение
+       продолжится, а на экране блокировки появятся контролы.</p>
   </div>
 
-<script src="/nosleep.js"></script>
 <script>
 const playBtn = document.getElementById('play');
 const dot = document.getElementById('dot');
 const statusText = document.getElementById('statusText');
 const vol = document.getElementById('vol');
+const audioEl = document.getElementById('sink');
 
 let ws = null;
 let audioCtx = null;
 let gainNode = null;
+let streamDest = null;     // MediaStreamAudioDestinationNode -> <audio>
 let streamLive = false;
 let started = false;
-
-// Не даём экрану телефона гаснуть, пока идёт прослушивание.
-const noSleep = (typeof NoSleep !== 'undefined') ? new NoSleep() : null;
 
 let sampleRate = 48000;   // обновляется из format-сообщения источника
 let nextTime = 0;         // момент (в часах audioCtx) для следующего кусочка
@@ -133,14 +137,59 @@ function startPlayback() {
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   gainNode = audioCtx.createGain();
   gainNode.gain.value = parseFloat(vol.value);
-  gainNode.connect(audioCtx.destination);
+
+  // Ключевой момент для фона/выключенного экрана на iOS:
+  // не выводим звук напрямую в audioCtx.destination, а гоним его в MediaStream
+  // и воспроизводим через обычный <audio>. Для системы это «медиа-дорожка»,
+  // поэтому AudioContext не глушится в фоне и появляются контролы на локскрине.
+  streamDest = audioCtx.createMediaStreamDestination();
+  gainNode.connect(streamDest);
+  audioEl.srcObject = streamDest.stream;
+
   audioCtx.resume();           // обязательно по жесту пользователя (особенно iOS)
-  if (noSleep) { try { noSleep.enable(); } catch (e) {} }  // держим экран включённым
+  const p = audioEl.play();    // тоже по жесту — иначе iOS не отдаст фон
+  if (p && p.catch) p.catch(() => {});
+
+  setupMediaSession();
+
   nextTime = 0;
   started = true;
   playBtn.textContent = '⏸';
   playBtn.classList.add('playing');
   setStatus(streamLive ? 'Воспроизведение' : 'Ожидание эфира…', streamLive ? 'live' : '');
+}
+
+// Метаданные и контролы для экрана блокировки / шторки уведомлений.
+function setupMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: 'Звук ПК',
+      artist: 'Sound Stream',
+      artwork: [{ src: artworkURL(), sizes: '256x256', type: 'image/png' }]
+    });
+    navigator.mediaSession.playbackState = 'playing';
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (!started) startPlayback();
+      audioEl.play().catch(() => {});
+      navigator.mediaSession.playbackState = 'playing';
+    });
+    navigator.mediaSession.setActionHandler('pause', stopPlayback);
+    navigator.mediaSession.setActionHandler('stop', stopPlayback);
+  } catch (e) {}
+}
+
+// Простая обложка для локскрина (рисуем на лету, без внешних файлов).
+let _artwork = null;
+function artworkURL() {
+  if (_artwork) return _artwork;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const x = c.getContext('2d');
+  x.fillStyle = '#0f172a'; x.fillRect(0, 0, 256, 256);
+  x.font = '150px serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText('🔊', 128, 140);
+  return (_artwork = c.toDataURL('image/png'));
 }
 
 // Int16 PCM (моно) -> запланированное воспроизведение через Web Audio.
@@ -175,10 +224,12 @@ function stopPlayback() {
   started = false;
   playBtn.textContent = '▶';
   playBtn.classList.remove('playing');
+  if (audioEl) { audioEl.pause(); audioEl.srcObject = null; }
   if (audioCtx) audioCtx.close().catch(() => {});
   audioCtx = null;
   gainNode = null;
-  if (noSleep) { try { noSleep.disable(); } catch (e) {} }  // отпускаем экран
+  streamDest = null;
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   setStatus(streamLive ? 'Эфир идёт — нажми ▶' : 'ПК не в эфире', streamLive ? 'live' : 'err');
 }
 
@@ -186,6 +237,15 @@ playBtn.addEventListener('click', () => {
   if (started) stopPlayback(); else startPlayback();
 });
 vol.addEventListener('input', () => { if (gainNode) gainNode.gain.value = parseFloat(vol.value); });
+
+// При возврате из фона/разблокировке: будим контекст, перезапускаем <audio>
+// и прыгаем к живому краю (за время паузы поток ушёл вперёд).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !started || !audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  audioEl.play().catch(() => {});
+  nextTime = 0;
+});
 
 connect();
 </script>
