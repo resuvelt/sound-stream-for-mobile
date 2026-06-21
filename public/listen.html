@@ -35,6 +35,10 @@
   .dot { width: 10px; height: 10px; border-radius: 50%; background: #64748b; flex: none; }
   .dot.live { background: #22c55e; box-shadow: 0 0 10px #22c55e; }
   .dot.err { background: #ef4444; }
+  .lat {
+    margin-top: 10px; font-size: 13px; color: #94a3b8; min-height: 16px;
+    font-variant-numeric: tabular-nums;
+  }
   .row { margin-top: 20px; display: flex; align-items: center; gap: 12px; }
   .row label { font-size: 13px; color: #94a3b8; white-space: nowrap; }
   input[type=range] { width: 100%; }
@@ -56,6 +60,8 @@
       <span id="statusText">Подключение…</span>
     </div>
 
+    <div class="lat" id="lat">Задержка: — мс</div>
+
     <div class="row">
       <label>Громкость</label>
       <input id="vol" type="range" min="0" max="1" step="0.01" value="1" />
@@ -72,6 +78,7 @@ const dot = document.getElementById('dot');
 const statusText = document.getElementById('statusText');
 const vol = document.getElementById('vol');
 const audioEl = document.getElementById('sink');
+const latEl = document.getElementById('lat');
 
 let ws = null;
 let audioCtx = null;
@@ -79,6 +86,9 @@ let gainNode = null;
 let streamDest = null;     // MediaStreamAudioDestinationNode -> <audio>
 let streamLive = false;
 let started = false;
+
+let latencyMs = 0;         // сглаженная локальная задержка (буфер + выход)
+let latTimer = null;       // таймер обновления индикатора
 
 let sampleRate = 48000;   // обновляется из format-сообщения источника
 let nextTime = 0;         // момент (в часах audioCtx) для следующего кусочка
@@ -154,9 +164,27 @@ function startPlayback() {
 
   nextTime = 0;
   started = true;
+  startLatencyReadout();
   playBtn.textContent = '⏸';
   playBtn.classList.add('playing');
   setStatus(streamLive ? 'Воспроизведение' : 'Ожидание эфира…', streamLive ? 'live' : '');
+}
+
+// Периодически выводим сглаженную задержку в мс, пока идёт воспроизведение.
+function startLatencyReadout() {
+  latencyMs = 0;
+  latEl.textContent = 'Задержка: измеряю…';
+  clearInterval(latTimer);
+  latTimer = setInterval(() => {
+    if (started && latencyMs) latEl.textContent = 'Задержка: ~' + Math.round(latencyMs) + ' мс';
+  }, 300);
+}
+
+function stopLatencyReadout() {
+  clearInterval(latTimer);
+  latTimer = null;
+  latencyMs = 0;
+  latEl.textContent = 'Задержка: — мс';
 }
 
 // Метаданные и контролы для экрана блокировки / шторки уведомлений.
@@ -212,6 +240,12 @@ function schedulePCM(arrayBuffer) {
   if (lead > JITTER + 0.05) rate = 1.02;
   else if (lead < JITTER - 0.03) rate = 0.99;
 
+  // Локальная задержка = буфер впереди живого края + задержка вывода устройства.
+  // Сетевую часть (ПК→сервер→сюда) без синхронизации часов не измерить.
+  const out = audioCtx.outputLatency || audioCtx.baseLatency || 0;
+  const inst = (lead + out) * 1000;
+  latencyMs = latencyMs ? latencyMs * 0.9 + inst * 0.1 : inst;
+
   const src = audioCtx.createBufferSource();
   src.buffer = buffer;
   src.playbackRate.value = rate;
@@ -222,6 +256,7 @@ function schedulePCM(arrayBuffer) {
 
 function stopPlayback() {
   started = false;
+  stopLatencyReadout();
   playBtn.textContent = '▶';
   playBtn.classList.remove('playing');
   if (audioEl) { audioEl.pause(); audioEl.srcObject = null; }
