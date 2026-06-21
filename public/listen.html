@@ -41,7 +41,11 @@
   }
   .row { margin-top: 20px; display: flex; align-items: center; gap: 12px; }
   .row label { font-size: 13px; color: #94a3b8; white-space: nowrap; }
-  input[type=range] { width: 100%; }
+  input[type=range] { flex: 1; min-width: 0; }
+  .bufval {
+    font-size: 13px; color: #e2e8f0; white-space: nowrap; min-width: 52px;
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
   .hint { margin-top: 16px; font-size: 13px; color: #94a3b8; line-height: 1.5; }
 </style>
 </head>
@@ -63,22 +67,22 @@
     <div class="lat" id="lat">Задержка: — мс</div>
 
     <div class="row">
-      <label>Громкость</label>
-      <input id="vol" type="range" min="0" max="1" step="0.01" value="1" />
+      <label>Буфер</label>
+      <input id="buf" type="range" min="10" max="200" step="5" value="10" />
+      <span id="bufVal" class="bufval">10 мс</span>
     </div>
 
-    <p class="hint">Нажми ▶, чтобы начать. Звук идёт как медиа-дорожка —
-       можно заблокировать телефон или свернуть браузер, воспроизведение
-       продолжится, а на экране блокировки появятся контролы.</p>
+    <p class="hint">Можно гасить экран и сворачивать браузер — звук продолжит играть.</p>
   </div>
 
 <script>
 const playBtn = document.getElementById('play');
 const dot = document.getElementById('dot');
 const statusText = document.getElementById('statusText');
-const vol = document.getElementById('vol');
 const audioEl = document.getElementById('sink');
 const latEl = document.getElementById('lat');
+const buf = document.getElementById('buf');
+const bufVal = document.getElementById('bufVal');
 
 let ws = null;
 let audioCtx = null;
@@ -92,8 +96,24 @@ let latTimer = null;       // таймер обновления индикато
 
 let sampleRate = 48000;   // обновляется из format-сообщения источника
 let nextTime = 0;         // момент (в часах audioCtx) для следующего кусочка
-const JITTER = 0.06;      // целевой буфер, сек (мало — т.к. LAN почти без потерь)
-const MAX_LATENCY = 0.3;  // аварийный порог: больше — мгновенный прыжок к живому
+
+// Целевой буфер вперёд живого края, мс. Меньше — ниже задержка, но при неровной
+// сети возможны заикания. Из него выводим окно коррекции скоростью (hi/lo вокруг
+// цели) и аварийный порог отставания (max — прыжок к живому краю).
+function cfgFromBuf(ms) {
+  const j = ms / 1000;
+  return { jitter: j, hi: j * 0.9, lo: j * 0.5, max: j * 3 + 0.05 };
+}
+// Safari в приватном режиме бросает исключение на localStorage — оборачиваем.
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+let bufMs = parseInt(lsGet('ss-buf'), 10);
+if (!bufMs) {  // миграция со старых пресетов или значение по умолчанию
+  const old = lsGet('ss-mode');
+  bufMs = old === 'stable' ? 120 : old === 'balanced' ? 60 : 10;
+}
+bufMs = Math.min(200, Math.max(10, bufMs));
+let cfg = cfgFromBuf(bufMs);
 
 function setStatus(text, cls) {
   statusText.textContent = text;
@@ -146,7 +166,7 @@ function startPlayback() {
   if (started) return;
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   gainNode = audioCtx.createGain();
-  gainNode.gain.value = parseFloat(vol.value);
+  gainNode.gain.value = 1;   // громкость регулируется кнопками телефона
 
   // Ключевой момент для фона/выключенного экрана на iOS:
   // не выводим звук напрямую в audioCtx.destination, а гоним его в MediaStream
@@ -231,14 +251,14 @@ function schedulePCM(arrayBuffer) {
 
   const now = audioCtx.currentTime;
   // Старт/недобор буфера или авария (слишком большое отставание) — задаём запас.
-  if (nextTime < now + 0.005 || nextTime - now > MAX_LATENCY) nextTime = now + JITTER;
+  if (nextTime < now + 0.005 || nextTime - now > cfg.max) nextTime = now + cfg.jitter;
 
   // Плавная коррекция задержки скоростью (±%, на слух почти незаметно):
   // отстаём от живого края — чуть ускоряемся, подобрались слишком близко — тормозим.
   const lead = nextTime - now;
   let rate = 1;
-  if (lead > JITTER + 0.05) rate = 1.02;
-  else if (lead < JITTER - 0.03) rate = 0.99;
+  if (lead > cfg.jitter + cfg.hi) rate = 1.02;
+  else if (lead < cfg.jitter - cfg.lo) rate = 0.99;
 
   // Локальная задержка = буфер впереди живого края + задержка вывода устройства.
   // Сетевую часть (ПК→сервер→сюда) без синхронизации часов не измерить.
@@ -271,7 +291,18 @@ function stopPlayback() {
 playBtn.addEventListener('click', () => {
   if (started) stopPlayback(); else startPlayback();
 });
-vol.addEventListener('input', () => { if (gainNode) gainNode.gain.value = parseFloat(vol.value); });
+
+// Применяем целевой буфер на лету и запоминаем число.
+function setBuf(ms, save) {
+  bufMs = ms;
+  cfg = cfgFromBuf(ms);
+  bufVal.textContent = ms + ' мс';
+  buf.value = ms;
+  if (started) nextTime = 0;  // мгновенно пересобрать буфер под новое значение
+  if (save) lsSet('ss-buf', String(ms));
+}
+buf.addEventListener('input', () => setBuf(parseInt(buf.value, 10), true));
+setBuf(bufMs, false);  // инициализация подписи и положения ползунка
 
 // При возврате из фона/разблокировке: будим контекст, перезапускаем <audio>
 // и прыгаем к живому краю (за время паузы поток ушёл вперёд).
