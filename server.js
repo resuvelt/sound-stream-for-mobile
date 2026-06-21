@@ -6,6 +6,7 @@ const os = require('os');
 const express = require('express');
 const QRCode = require('qrcode');
 const { WebSocketServer } = require('ws');
+const SystemAudioCapture = require('./capture');
 
 const PORT = process.env.PORT || 47823;
 
@@ -46,9 +47,45 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 // State of the single live broadcast.
-let broadcaster = null;        // ws of the PC that captures system audio
+let broadcaster = null;        // ws of the PC that captures system audio (браузерный источник)
 let formatMsg = null;          // JSON string describing the PCM format (sampleRate, channels)
 const listeners = new Set();   // ws of phones / browsers that listen
+
+// Нативный системный захват (WASAPI loopback). Работает «по требованию»:
+// поднимается, когда появляются слушатели, и гаснет, когда их не осталось.
+// Браузерный источник (если подключён) имеет приоритет над системным.
+const capture = new SystemAudioCapture();
+capture.onFrame = (buf) => {
+  for (const l of listeners) {
+    if (l.readyState === l.OPEN) l.send(buf, { binary: true });
+  }
+};
+
+function captureFormatMsg() {
+  return JSON.stringify({ type: 'format', sampleRate: capture.sampleRate, channels: 1 });
+}
+
+function startServerCaptureIfNeeded() {
+  if (broadcaster || listeners.size === 0 || capture.running || !capture.available) return;
+  if (capture.start()) {
+    formatMsg = captureFormatMsg();
+    console.log(`[capture] loopback запущен: ${capture.deviceName} @ ${capture.sampleRate} Hz`);
+    for (const l of listeners) {
+      broadcastJSON(l, { type: 'live' });
+      if (l.readyState === l.OPEN) l.send(formatMsg);
+    }
+  }
+}
+
+function stopServerCapture() {
+  if (!capture.running) return;
+  capture.stop();
+  console.log('[capture] loopback остановлен (нет слушателей)');
+  if (!broadcaster) {
+    formatMsg = null;
+    for (const l of listeners) broadcastJSON(l, { type: 'offline' });
+  }
+}
 
 function broadcastJSON(ws, obj) {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
@@ -68,6 +105,10 @@ wss.on('connection', (ws, req) => {
       broadcastJSON(broadcaster, { type: 'replaced' });
       broadcaster.close();
     }
+    // Браузерный источник важнее системного — глушим loopback, чтобы не было
+    // двойного звука, и переходим на поток из браузера.
+    if (capture.running) capture.stop();
+
     broadcaster = ws;
     formatMsg = null;
     console.log('[broadcaster] connected');
@@ -99,6 +140,8 @@ wss.on('connection', (ws, req) => {
         formatMsg = null;
         console.log('[broadcaster] disconnected');
         for (const l of listeners) broadcastJSON(l, { type: 'offline' });
+        // Браузерный источник отвалился — поднимаем системный захват обратно.
+        startServerCaptureIfNeeded();
       }
     });
     return;
@@ -107,21 +150,32 @@ wss.on('connection', (ws, req) => {
   // Default role: listener.
   listeners.add(ws);
   console.log(`[listener] connected (${listeners.size} total)`);
-  broadcastJSON(ws, { type: broadcaster ? 'live' : 'offline' });
-  // Send the cached format so the listener can set up its audio decoder.
-  if (broadcaster && formatMsg) ws.send(formatMsg);
   updateListenerCount();
+
+  if (broadcaster || capture.running) {
+    // Источник уже активен — сразу сообщаем live и формат.
+    broadcastJSON(ws, { type: 'live' });
+    if (formatMsg) ws.send(formatMsg);
+  } else {
+    // Источника нет — сообщаем offline и пробуем поднять системный захват.
+    // Если он поднимется, startServerCaptureIfNeeded сам разошлёт live+format всем.
+    broadcastJSON(ws, { type: 'offline' });
+    startServerCaptureIfNeeded();
+  }
 
   ws.on('close', () => {
     listeners.delete(ws);
     console.log(`[listener] disconnected (${listeners.size} total)`);
     updateListenerCount();
+    if (listeners.size === 0) stopServerCapture(); // никого не осталось — гасим захват
   });
 });
 
 server.listen(PORT, () => {
   console.log(`\n  sound-stream running`);
-  console.log(`  PC (broadcast): http://localhost:${PORT}/`);
+  console.log(capture.available
+    ? `  Источник: системный звук ПК (WASAPI loopback) — захват включится с подключением слушателя`
+    : `  Источник: только браузер (системный захват недоступен) — открой http://localhost:${PORT}/`);
   const ips = lanAddresses();
   if (ips.length) {
     console.log(`  Phone (listen), та же WiFi:`);
@@ -131,3 +185,8 @@ server.listen(PORT, () => {
   }
   console.log('');
 });
+
+// Чистая остановка захвата при выходе.
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => { capture.stop(); process.exit(0); });
+}
