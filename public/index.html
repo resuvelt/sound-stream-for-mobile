@@ -221,13 +221,13 @@ btn.addEventListener('click', () => {
   try {
     const info = await fetch('/info').then(r => r.json());
     if (!info.addresses || !info.addresses.length) return;
-    const primary = `http://${info.addresses[0]}:${info.port}/listen`;
+    const primary = `http://${info.addresses[0]}:${info.port}/`;
     document.getElementById('lan').hidden = false;
     document.getElementById('lanUrl').textContent = primary;
     if (info.addresses.length > 1) {
       document.getElementById('lanAlt').textContent =
         'Если не открывается, попробуй: ' +
-        info.addresses.slice(1).map(ip => `http://${ip}:${info.port}/listen`).join('  •  ');
+        info.addresses.slice(1).map(ip => `http://${ip}:${info.port}/`).join('  •  ');
     }
     // QR рисуется сервером (PNG), без внешних библиотек.
     const img = document.createElement('img');

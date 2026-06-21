@@ -25,8 +25,14 @@ function lanAddresses() {
 }
 
 const app = express();
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Корень → страница слушателя: телефон сразу попадает на неё по http://IP:PORT
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'listen.html')));
 app.get('/listen', (req, res) => res.sendFile(path.join(__dirname, 'public', 'listen.html')));
+// Браузерный источник — необязателен (звук берётся системно): http://IP:PORT/source
+app.get('/source', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.get('/nosleep.js', (req, res) => res.sendFile(require.resolve('nosleep.js')));
 app.get('/info', (req, res) => res.json({ port: PORT, addresses: lanAddresses() }));
 
@@ -34,7 +40,7 @@ app.get('/info', (req, res) => res.json({ port: PORT, addresses: lanAddresses() 
 app.get('/qr', async (req, res) => {
   const ips = lanAddresses();
   if (!ips.length) return res.status(404).end();
-  const url = `http://${ips[0]}:${PORT}/listen`;
+  const url = `http://${ips[0]}:${PORT}/`;
   try {
     const png = await QRCode.toBuffer(url, { width: 200, margin: 1 });
     res.type('png').send(png);
@@ -174,14 +180,14 @@ wss.on('connection', (ws, req) => {
 server.listen(PORT, () => {
   console.log(`\n  sound-stream running`);
   console.log(capture.available
-    ? `  Источник: системный звук ПК (WASAPI loopback) — захват включится с подключением слушателя`
-    : `  Источник: только браузер (системный захват недоступен) — открой http://localhost:${PORT}/`);
+    ? `  Источник: системный звук ПК (WASAPI loopback) — включится при подключении слушателя`
+    : `  Источник: системный захват недоступен — браузерный режим: http://localhost:${PORT}/source`);
   const ips = lanAddresses();
   if (ips.length) {
-    console.log(`  Phone (listen), та же WiFi:`);
-    for (const ip of ips) console.log(`      http://${ip}:${PORT}/listen`);
+    console.log(`  Телефон (слушать), та же WiFi:`);
+    for (const ip of ips) console.log(`      http://${ip}:${PORT}/`);
   } else {
-    console.log(`  Phone (listen): http://localhost:${PORT}/listen (LAN-адрес не найден)`);
+    console.log(`  Телефон (слушать): http://localhost:${PORT}/ (LAN-адрес не найден)`);
   }
   console.log('');
 });
