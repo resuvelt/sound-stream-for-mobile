@@ -4,6 +4,7 @@
   "description": "Stream PC system audio to your phone via the browser",
   "main": "server.js",
   "type": "commonjs",
+  "license": "MIT",
   "scripts": {
     "start": "node server.js"
   },
