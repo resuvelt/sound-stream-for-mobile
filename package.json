@@ -1,6 +1,6 @@
 {
   "name": "sound-stream",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Stream PC system audio to your phone via the browser",
   "main": "server.js",
   "type": "commonjs",
