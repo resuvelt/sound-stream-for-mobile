@@ -11,6 +11,7 @@
   "dependencies": {
     "audify": "^1.10.1",
     "express": "^4.19.2",
+    "multicast-dns": "^7.2.5",
     "ws": "^8.18.0"
   }
 }

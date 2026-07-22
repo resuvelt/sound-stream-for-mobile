@@ -19,6 +19,10 @@ Add-Type -AssemblyName System.Drawing
 $script:root   = Split-Path -Parent $PSScriptRoot          # tray/ -> корень репозитория
 $script:server = Join-Path $script:root 'server.js'
 $script:port   = if ($env:PORT) { [int]$env:PORT } else { 47823 }
+# Постоянное mDNS-имя: http://<name>.local:PORT/ вместо адреса по IP.
+$script:mdnsName = if ($env:MDNS_NAME) { $env:MDNS_NAME } else { 'sound-stream' }
+$script:mdnsHost = "$($script:mdnsName).local"
+$script:mdnsUrl  = "http://$($script:mdnsHost):$($script:port)/"
 
 $script:node = (Get-Command node -ErrorAction SilentlyContinue).Source
 if (-not $script:node) { $script:node = Join-Path $env:ProgramFiles 'nodejs\node.exe' }
@@ -61,6 +65,7 @@ function Start-Server {
   $psi.UseShellExecute  = $false
   $psi.CreateNoWindow   = $true
   $psi.EnvironmentVariables['PORT'] = "$script:port"
+  $psi.EnvironmentVariables['MDNS_NAME'] = "$script:mdnsName"
   $script:proc = [System.Diagnostics.Process]::Start($psi)
 }
 
@@ -121,9 +126,21 @@ $script:menu.add_Opening({
 
   [void]$script:menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 
-  $hint = $script:menu.Items.Add('Открой на телефоне (та же Wi-Fi):')
+  # Постоянный адрес (mDNS) — добавь на телефоне в закладку один раз, он не
+  # зависит от смены IP по DHCP.
+  $hint = $script:menu.Items.Add('Постоянный адрес (добавь в закладку на телефоне):')
   $hint.Enabled = $false
+  $perm = $script:menu.Items.Add("   ⭐  $script:mdnsUrl")
+  $perm.Tag = $script:mdnsUrl
+  $perm.add_Click({
+    $u = $this.Tag
+    try { [System.Windows.Forms.Clipboard]::SetText($u) } catch {}
+    $script:notify.ShowBalloonTip(2500, 'Адрес скопирован', $u, [System.Windows.Forms.ToolTipIcon]::Info)
+  })
+
   $ips = Get-LanIPv4
+  $hint2 = $script:menu.Items.Add('Или по IP (запасной вариант):')
+  $hint2.Enabled = $false
   if ($ips.Count -eq 0) {
     $none = $script:menu.Items.Add('   LAN-адрес не найден')
     $none.Enabled = $false
@@ -184,9 +201,7 @@ $script:watch.Start()
 # --- старт ---
 try {
   Start-Server
-  $ips = Get-LanIPv4
-  $addr = if ($ips.Count) { "http://$($ips[0])`:$script:port/" } else { "http://localhost:$script:port/" }
-  $script:notify.ShowBalloonTip(3500, 'sound-stream запущен', "Адрес для телефона: $addr", [System.Windows.Forms.ToolTipIcon]::Info)
+  $script:notify.ShowBalloonTip(3500, 'sound-stream запущен', "Постоянный адрес для телефона: $script:mdnsUrl", [System.Windows.Forms.ToolTipIcon]::Info)
 } catch {
   $script:notify.ShowBalloonTip(5000, 'sound-stream — ошибка запуска', "$_", [System.Windows.Forms.ToolTipIcon]::Error)
 }

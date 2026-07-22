@@ -6,8 +6,11 @@ const os = require('os');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const SystemAudioCapture = require('./capture');
+const { advertise } = require('./mdns');
 
 const PORT = process.env.PORT || 47823;
+// Постоянное mDNS-имя: http://<MDNS_NAME>.local:PORT/ вместо адреса по IP.
+const MDNS_NAME = process.env.MDNS_NAME || 'sound-stream';
 
 // Локальные (LAN) IPv4-адреса этого ПК, без виртуальных адаптеров.
 function lanAddresses() {
@@ -31,6 +34,9 @@ app.get('/listen', listenPage);
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
+
+// Объявление в локальной сети (заполняется после старта сервера).
+let mdns = { hostname: `${MDNS_NAME}.local`, available: false, stop() {} };
 
 let formatMsg = null;          // JSON-описание формата PCM (sampleRate, channels)
 const listeners = new Set();   // ws телефонов/браузеров, которые слушают
@@ -90,21 +96,30 @@ wss.on('connection', (ws) => {
 });
 
 server.listen(PORT, () => {
+  // Поднимаем mDNS-объявление: постоянный адрес http://<name>.local:PORT/,
+  // который не ломается при смене IP по DHCP.
+  mdns = advertise({ name: MDNS_NAME, getAddresses: lanAddresses });
+
   console.log(`\n  sound-stream running`);
   console.log(capture.available
     ? `  Источник: системный звук ПК (WASAPI loopback) — включится при подключении слушателя`
     : `  ВНИМАНИЕ: системный захват недоступен (audify не загрузился) — звука не будет`);
+
+  if (mdns.available) {
+    console.log(`  Постоянный адрес для телефона (добавь в закладку — не зависит от смены IP):`);
+    console.log(`      http://${mdns.hostname}:${PORT}/`);
+  }
   const ips = lanAddresses();
   if (ips.length) {
-    console.log(`  Открой на телефоне (та же WiFi):`);
+    console.log(mdns.available ? `  Или по IP (запасной вариант):` : `  Открой на телефоне (та же WiFi):`);
     for (const ip of ips) console.log(`      http://${ip}:${PORT}/`);
-  } else {
+  } else if (!mdns.available) {
     console.log(`  Открой: http://localhost:${PORT}/ (LAN-адрес не найден)`);
   }
   console.log('');
 });
 
-// Чистая остановка захвата при выходе.
+// Чистая остановка захвата и mDNS при выходе.
 for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => { capture.stop(); process.exit(0); });
+  process.on(sig, () => { try { mdns.stop(); } catch (_) {} capture.stop(); process.exit(0); });
 }
