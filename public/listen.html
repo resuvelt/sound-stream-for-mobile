@@ -3,151 +3,142 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#0a0f1c" />
+<meta name="theme-color" content="#000000" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Звук ПК" />
 <title>Sound Stream — Слушать</title>
 <style>
+  /* Плоская тёмная тема в духе iOS: чистый чёрный фон, системная палитра,
+     без градиентов, без рамок и «карточки» — одно целостное полотно. */
   :root {
     color-scheme: dark;
-    --text: #e6edf7;
-    --muted: #94a3b8;
-    --faint: #6b7a90;
-    --accent: #22c55e;
-    --accent-2: #10b981;
-    --danger: #ef4444;
-    --panel: rgba(9, 14, 26, .55);
-    --hair: rgba(148, 163, 184, .14);
+    --bg: #000000;
+    --surface: #1c1c1e;      /* inset-группа, как в Настройках iOS */
+    --track: #39393d;
+    --text: #ffffff;
+    --secondary: rgba(235, 235, 245, .6);
+    --tertiary: rgba(235, 235, 245, .3);
+    --green: #30d158;
+    --red: #ff453a;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
-    margin: 0; min-height: 100vh; min-height: 100dvh;
-    display: flex; align-items: center; justify-content: center;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    color: var(--text); padding: 20px; -webkit-tap-highlight-color: transparent;
-    background:
-      radial-gradient(900px 620px at 12% -8%, rgba(34,197,94,.10), transparent 60%),
-      radial-gradient(820px 620px at 112% 8%, rgba(99,102,241,.18), transparent 55%),
-      linear-gradient(180deg, #0e1626, #0a0f1c 62%);
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, system-ui, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
   }
-  .card {
-    position: relative; width: 100%; max-width: 400px; padding: 28px 26px 22px;
-    text-align: center; border-radius: 24px;
-    background: rgba(23, 32, 53, .68); border: 1px solid var(--hair);
-    box-shadow: 0 30px 80px -22px rgba(0,0,0,.75), inset 0 1px 0 rgba(255,255,255,.05);
-    -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%);
+  .page {
+    min-height: 100vh; min-height: 100dvh;
+    max-width: 420px; margin: 0 auto;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(24px + env(safe-area-inset-top)) 24px calc(20px + env(safe-area-inset-bottom));
   }
 
-  .head { display: flex; align-items: center; gap: 12px; text-align: left; margin-bottom: 24px; }
-  .logo {
-    width: 44px; height: 44px; flex: none; border-radius: 13px; display: grid; place-items: center;
-    font-size: 22px; border: 1px solid rgba(34,197,94,.35);
-    background: linear-gradient(145deg, rgba(34,197,94,.25), rgba(16,185,129,.10));
-    box-shadow: 0 8px 22px -8px rgba(34,197,94,.6);
+  /* --- шапка: обложка, название, статус --- */
+  .top { display: flex; flex-direction: column; align-items: center; margin-top: 6vh; }
+  .art {
+    width: 96px; height: 96px; border-radius: 22px;
+    background: var(--surface); color: var(--secondary);
+    display: grid; place-items: center;
   }
-  .head h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: .2px; }
-  .head .sub { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+  .art-glyph { width: 42px; height: 42px; fill: currentColor; }
 
-  .stage { position: relative; display: grid; place-items: center; padding: 12px 0 20px; }
+  h1 { margin: 20px 0 0; font-size: 24px; font-weight: 650; letter-spacing: .2px; }
+  .status {
+    margin: 8px 0 0; display: flex; align-items: center; gap: 8px;
+    font-size: 15px; color: var(--secondary);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #636366; flex: none; }
+  .dot.live { background: var(--green); animation: pulse 2s infinite; }
+  .dot.err { background: var(--red); }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(48, 209, 88, .45); }
+    70% { box-shadow: 0 0 0 7px rgba(48, 209, 88, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(48, 209, 88, 0); }
+  }
+
+  /* --- центр: живой эквалайзер (реальный спектр) и кнопка play/pause --- */
+  .stage {
+    flex: 1; min-height: 220px; width: 100%;
+    margin-top: clamp(28px, 7vh, 72px);  /* воздух между шапкой и эквалайзером */
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px;
+  }
+  .viz { width: 100%; max-width: 360px; height: clamp(110px, 24vh, 200px); }
+  .viz canvas { width: 100%; height: 100%; display: block; }
   .play {
-    position: relative; z-index: 1; width: 132px; height: 132px; border-radius: 50%;
-    border: 0; cursor: pointer; display: grid; place-items: center; color: #eafff2;
-    background: radial-gradient(120% 120% at 30% 24%, #34d27d, #16a34a 62%, #0f8a3d);
-    box-shadow: 0 18px 42px -10px rgba(16,163,74,.65), inset 0 2px 6px rgba(255,255,255,.4),
-                inset 0 -10px 20px rgba(0,0,0,.28);
-    transition: transform .15s ease, box-shadow .2s ease, background .2s ease;
+    border: 0; background: none; padding: 18px; cursor: pointer; color: var(--text);
+    transition: transform .18s ease, opacity .18s ease;
   }
-  .play:hover { transform: translateY(-1px) scale(1.03); }
-  .play:active { transform: scale(.97); }
-  .play svg { width: 48px; height: 48px; fill: currentColor; filter: drop-shadow(0 2px 3px rgba(0,0,0,.25)); }
+  .play svg { width: 72px; height: 72px; fill: currentColor; display: block; }
+  .play .i-play { transform: translateX(4px); }  /* оптическое центрирование треугольника */
   .play .i-pause { display: none; }
-  .play.playing {
-    color: #fff;
-    background: radial-gradient(120% 120% at 30% 24%, #fb7185, #ef4444 62%, #dc2626);
-    box-shadow: 0 18px 42px -10px rgba(239,68,68,.6), inset 0 2px 6px rgba(255,255,255,.35),
-                inset 0 -10px 20px rgba(0,0,0,.28);
-  }
   .play.playing .i-play { display: none; }
   .play.playing .i-pause { display: block; }
-  .play:disabled {
-    color: #64748b; cursor: not-allowed; transform: none;
-    background: #25344e; box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
-  }
-  .play:disabled svg { filter: none; }
-  /* пульсирующие кольца во время эфира */
-  .play::before, .play::after {
-    content: ""; position: absolute; inset: -3px; border-radius: 50%;
-    border: 2px solid rgba(255,255,255,.4); opacity: 0; pointer-events: none;
-  }
-  .play.playing::before { animation: ripple 2.4s ease-out infinite; }
-  .play.playing::after  { animation: ripple 2.4s ease-out infinite 1.2s; }
-  @keyframes ripple { 0% { transform: scale(1); opacity: .5; } 100% { transform: scale(1.7); opacity: 0; } }
+  .play:active { transform: scale(.88); }
+  .play:disabled { opacity: .25; cursor: default; }
 
-  .status {
-    display: inline-flex; align-items: center; gap: 9px; padding: 9px 16px; border-radius: 999px;
-    font-size: 13.5px; background: var(--panel); border: 1px solid var(--hair);
+  /* --- низ: задержка, inset-группа с буфером, подсказка --- */
+  .bottom { width: 100%; }
+  .lat {
+    text-align: center; font-size: 13px; color: var(--tertiary);
+    margin-bottom: 14px; font-variant-numeric: tabular-nums;
   }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: #64748b; flex: none; }
-  .dot.live { background: var(--accent); animation: pulse 1.6s infinite; }
-  .dot.err { background: var(--danger); }
-  @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(34,197,94,.55); }
-    70% { box-shadow: 0 0 0 7px rgba(34,197,94,0); }
-    100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+  .cell {
+    background: var(--surface); border-radius: 14px; padding: 14px 16px 12px;
   }
+  .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+  .lbl { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--secondary); }
+  .val { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .scale { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--tertiary); }
 
-  .lat { margin-top: 14px; font-size: 12.5px; color: var(--muted); min-height: 16px;
-         font-variant-numeric: tabular-nums; }
-
-  .control {
-    margin-top: 18px; padding: 13px 15px 11px; border-radius: 16px;
-    background: var(--panel); border: 1px solid var(--hair);
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 28px;
+    background: transparent; cursor: pointer; --p: 0%;
   }
-  .ctl-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
-  .ctl-head .lbl { font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); }
-  .bufval { font-size: 15px; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
-  .ctl-scale { display: flex; justify-content: space-between; margin-top: 8px; font-size: 10.5px; color: var(--faint); }
-
-  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 22px;
-                      background: transparent; cursor: pointer; --p: 0%; }
   input[type=range]::-webkit-slider-runnable-track {
-    height: 6px; border-radius: 999px;
-    background: linear-gradient(90deg, var(--accent), var(--accent-2)) no-repeat,
-                rgba(148,163,184,.22);
+    height: 4px; border-radius: 2px;
+    background: linear-gradient(#fff, #fff) no-repeat, var(--track); /* плоская белая заливка */
     background-size: var(--p) 100%, 100% 100%;
   }
   input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none; width: 20px; height: 20px; margin-top: -7px;
-    border-radius: 50%; background: #fff; border: 2px solid var(--accent);
-    box-shadow: 0 2px 8px rgba(0,0,0,.45), 0 0 0 4px rgba(34,197,94,.18);
+    -webkit-appearance: none; appearance: none; width: 24px; height: 24px; margin-top: -10px;
+    border-radius: 50%; background: #fff; border: 0;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, .45);
   }
-  input[type=range]::-moz-range-track { height: 6px; border-radius: 999px; background: rgba(148,163,184,.22); }
-  input[type=range]::-moz-range-progress { height: 6px; border-radius: 999px;
-    background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
-  input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 2px solid var(--accent);
-    border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.45); }
+  input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--track); }
+  input[type=range]::-moz-range-progress { height: 4px; border-radius: 2px; background: #fff; }
+  input[type=range]::-moz-range-thumb {
+    width: 24px; height: 24px; border: 0; border-radius: 50%; background: #fff;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, .45);
+  }
 
-  .hint { margin: 16px 4px 2px; font-size: 12px; color: var(--faint); line-height: 1.5; }
   #sink { display: none; }
 
   @media (prefers-reduced-motion: reduce) {
-    .play.playing::before, .play.playing::after, .dot.live { animation: none !important; }
+    .dot.live { animation: none !important; }
   }
 </style>
 </head>
 <body>
-  <div class="card">
-    <header class="head">
-      <div class="logo">🔊</div>
-      <div>
-        <h1>Звук с ПК</h1>
-        <p class="sub">Прямой эфир по локальной сети</p>
+  <main class="page">
+    <header class="top">
+      <div class="art" aria-hidden="true">
+        <svg class="art-glyph" viewBox="0 0 24 24">
+          <path d="M3 9v6h4l5 5V4L7 9H3z"/>
+          <path d="M16.5 12A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12z"/>
+          <path d="M14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+        </svg>
       </div>
+      <h1>Звук с ПК</h1>
+      <p class="status"><span id="dot" class="dot"></span><span id="statusText">Подключение…</span></p>
     </header>
 
     <div class="stage">
+      <div class="viz" aria-hidden="true"><canvas id="viz"></canvas></div>
       <button id="play" class="play" disabled aria-label="Воспроизвести">
         <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
         <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true">
@@ -161,24 +152,19 @@
          играть звук в фоне и с выключенным экраном. -->
     <audio id="sink" playsinline></audio>
 
-    <div class="status">
-      <span id="dot" class="dot"></span>
-      <span id="statusText">Подключение…</span>
-    </div>
+    <footer class="bottom">
+      <div class="lat" id="lat">Задержка: — мс</div>
 
-    <div class="lat" id="lat">Задержка: — мс</div>
-
-    <div class="control">
-      <div class="ctl-head">
-        <span class="lbl">Буфер</span>
-        <span id="bufVal" class="bufval">10 мс</span>
-      </div>
-      <input id="buf" type="range" min="10" max="200" step="5" value="10" />
-      <div class="ctl-scale"><span>меньше задержка</span><span>стабильнее</span></div>
-    </div>
-
-    <p class="hint">Можно гасить экран и сворачивать браузер — звук продолжит играть.</p>
-  </div>
+      <section class="cell">
+        <div class="row">
+          <span class="lbl">Буфер</span>
+          <span id="bufVal" class="val">10 мс</span>
+        </div>
+        <input id="buf" type="range" min="10" max="200" step="5" value="10" />
+        <div class="scale"><span>меньше задержка</span><span>стабильнее</span></div>
+      </section>
+    </footer>
+  </main>
 
 <script>
 const playBtn = document.getElementById('play');
@@ -188,6 +174,8 @@ const audioEl = document.getElementById('sink');
 const latEl = document.getElementById('lat');
 const buf = document.getElementById('buf');
 const bufVal = document.getElementById('bufVal');
+const viz = document.getElementById('viz');
+const vctx = viz.getContext('2d');
 
 let ws = null;
 let audioCtx = null;
@@ -201,6 +189,11 @@ let latTimer = null;       // таймер обновления индикато
 
 let sampleRate = 48000;   // обновляется из format-сообщения источника
 let nextTime = 0;         // момент (в часах audioCtx) для следующего кусочка
+
+const VIZ_BARS = 27;      // столбиков в эквалайзере
+let analyser = null;      // AnalyserNode — реальный спектр играющего звука
+let vizRaf = 0;           // id кадра requestAnimationFrame
+let barMap = null;        // столбик -> диапазон FFT-бинов (лог-шкала)
 
 // Целевой буфер вперёд живого края, мс. Меньше — ниже задержка, но при неровной
 // сети возможны заикания. Из него выводим окно коррекции скоростью (hi/lo вокруг
@@ -258,7 +251,7 @@ function connect() {
 }
 
 function onLive() {
-  setStatus(started ? 'Воспроизведение' : 'Эфир идёт — нажми ▶', 'live');
+  setStatus(started ? 'Воспроизведение' : 'Эфир идёт', 'live');
   if (!started) playBtn.disabled = false;
 }
 
@@ -281,6 +274,13 @@ function startPlayback() {
   gainNode.connect(streamDest);
   audioEl.srcObject = streamDest.stream;
 
+  // Живой эквалайзер: тот же сигнал заводим в анализатор спектра.
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.75;
+  gainNode.connect(analyser);
+  buildBarMap(audioCtx.sampleRate, analyser.frequencyBinCount);
+
   audioCtx.resume();           // обязательно по жесту пользователя (особенно iOS)
   const p = audioEl.play();    // тоже по жесту — иначе iOS не отдаст фон
   if (p && p.catch) p.catch(() => {});
@@ -290,6 +290,7 @@ function startPlayback() {
   nextTime = 0;
   started = true;
   startLatencyReadout();
+  startViz();
   playBtn.classList.add('playing');
   playBtn.setAttribute('aria-label', 'Остановить');
   setStatus(streamLive ? 'Воспроизведение' : 'Ожидание эфира…', streamLive ? 'live' : '');
@@ -339,7 +340,7 @@ function artworkURL() {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const x = c.getContext('2d');
-  x.fillStyle = '#0f172a'; x.fillRect(0, 0, 256, 256);
+  x.fillStyle = '#1c1c1e'; x.fillRect(0, 0, 256, 256);
   x.font = '150px serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
   x.fillText('🔊', 128, 140);
   return (_artwork = c.toDataURL('image/png'));
@@ -389,8 +390,11 @@ function stopPlayback() {
   audioCtx = null;
   gainNode = null;
   streamDest = null;
+  cancelAnimationFrame(vizRaf);
+  analyser = null;
+  drawViz(null);  // вернуть «спящие» заглушки
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
-  setStatus(streamLive ? 'Эфир идёт — нажми ▶' : 'ПК не в эфире', streamLive ? 'live' : 'err');
+  setStatus(streamLive ? 'Эфир идёт' : 'ПК не в эфире', streamLive ? 'live' : 'err');
 }
 
 playBtn.addEventListener('click', () => {
@@ -410,13 +414,86 @@ function setBuf(ms, save) {
 buf.addEventListener('input', () => setBuf(parseInt(buf.value, 10), true));
 setBuf(bufMs, false);  // инициализация подписи и положения ползунка
 
+// ---- Живой эквалайзер: рисуем реальный спектр из AnalyserNode ----
+
+// Подгоняем канвас под размер на экране и плотность пикселей.
+function sizeViz() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = viz.clientWidth, h = viz.clientHeight;
+  if (!w || !h) return;
+  viz.width = Math.round(w * dpr);
+  viz.height = Math.round(h * dpr);
+  vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!started) drawViz(null);
+}
+
+// Столбик -> диапазон FFT-бинов по логарифмической шкале (50 Гц–15 кГц):
+// так басы не съедают всю картинку, а верхам достаётся место.
+function buildBarMap(sr, bins) {
+  const ny = sr / 2;
+  const fmin = 50, fmax = Math.min(15000, ny);
+  barMap = [];
+  for (let i = 0; i < VIZ_BARS; i++) {
+    const f0 = fmin * Math.pow(fmax / fmin, i / VIZ_BARS);
+    const f1 = fmin * Math.pow(fmax / fmin, (i + 1) / VIZ_BARS);
+    let b0 = Math.floor(f0 / ny * bins), b1 = Math.ceil(f1 / ny * bins);
+    b0 = Math.max(0, Math.min(bins - 1, b0));
+    b1 = Math.max(b0 + 1, Math.min(bins, b1));
+    barMap.push([b0, b1]);
+  }
+}
+
+// data — байты спектра; null — «спящее» состояние (серые заглушки).
+function drawViz(data) {
+  const w = viz.clientWidth, h = viz.clientHeight;
+  if (!w || !h) return;
+  vctx.clearRect(0, 0, w, h);
+  const gap = 5;
+  const bw = (w - gap * (VIZ_BARS - 1)) / VIZ_BARS;
+  const stub = 4, r = Math.min(3, bw / 2);
+  vctx.fillStyle = data ? '#30d158' : '#2c2c2e';
+  for (let i = 0; i < VIZ_BARS; i++) {
+    let v = 0;
+    if (data && barMap) {
+      const [b0, b1] = barMap[i];
+      let s = 0;
+      for (let b = b0; b < b1; b++) s += data[b];
+      v = Math.min(1, s / (b1 - b0) / 255 * 1.25);
+      v = Math.pow(v, 1.35);  // лёгкая кривая — живее реагирует на музыку
+    }
+    const bh = stub + v * (h - stub);
+    const x = i * (bw + gap), y = h - bh;
+    vctx.beginPath();
+    if (vctx.roundRect) vctx.roundRect(x, y, bw, bh, r);
+    else vctx.rect(x, y, bw, bh);
+    vctx.fill();
+  }
+}
+
+function startViz() {
+  cancelAnimationFrame(vizRaf);
+  if (!analyser) return;
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  const loop = () => {
+    if (!started || !analyser) return;
+    analyser.getByteFrequencyData(data);
+    drawViz(data);
+    vizRaf = requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+window.addEventListener('resize', sizeViz);
+sizeViz();
+
 // При возврате из фона/разблокировке: будим контекст, перезапускаем <audio>
-// и прыгаем к живому краю (за время паузы поток ушёл вперёд).
+// и эквалайзер, прыгаем к живому краю (за время паузы поток ушёл вперёд).
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || !started || !audioCtx) return;
   if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
   audioEl.play().catch(() => {});
   nextTime = 0;
+  startViz();
 });
 
 connect();
