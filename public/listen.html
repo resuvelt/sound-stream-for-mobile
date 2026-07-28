@@ -2,11 +2,15 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <meta name="theme-color" content="#000000" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Звук ПК" />
+<link rel="icon" href="/favicon.png" sizes="32x32" type="image/png" />
+<link rel="icon" href="/icon-192.png" sizes="192x192" type="image/png" />
+<link rel="apple-touch-icon" href="/icon-180.png" />
+<link rel="manifest" href="/manifest.webmanifest" />
 <title>Sound Stream — Слушать</title>
 <style>
   /* Плоская тёмная тема в духе iOS: чистый чёрный фон, системная палитра,
@@ -23,28 +27,35 @@
     --red: #ff453a;
   }
   * { box-sizing: border-box; }
-  html, body { height: 100%; }
+  /* Экран приложения, а не документ: скролла нет вообще (никакой резинки на iOS),
+     двойной тап не зумит (touch-action: manipulation). */
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
   body {
+    position: fixed; inset: 0;
     margin: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, system-ui, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
     -webkit-tap-highlight-color: transparent;
     -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none; user-select: none;
   }
   .page {
-    min-height: 100vh; min-height: 100dvh;
+    height: 100%; overflow: hidden;
     max-width: 420px; margin: 0 auto;
     display: flex; flex-direction: column; align-items: center;
     padding: calc(24px + env(safe-area-inset-top)) 24px calc(20px + env(safe-area-inset-bottom));
   }
 
   /* --- шапка: обложка, название, статус --- */
-  .top { display: flex; flex-direction: column; align-items: center; margin-top: 6vh; }
+  .top { display: flex; flex-direction: column; align-items: center; margin-top: min(6vh, 40px); flex: none; }
+  /* Обложка — та же иконка, что у приложения на экране «Домой». */
   .art {
     width: 96px; height: 96px; border-radius: 22px;
-    background: var(--surface); color: var(--secondary);
-    display: grid; place-items: center;
+    background: var(--surface); display: block;
+    -webkit-user-drag: none; user-select: none;
   }
-  .art-glyph { width: 42px; height: 42px; fill: currentColor; }
 
   h1 { margin: 20px 0 0; font-size: 24px; font-weight: 650; letter-spacing: .2px; }
   .status {
@@ -61,13 +72,15 @@
   }
 
   /* --- центр: живой эквалайзер (реальный спектр) и кнопка play/pause --- */
+  /* min-height: 0 — чтобы центр сжимался на низких экранах и страница
+     всегда помещалась целиком (скролла-то нет). */
   .stage {
-    flex: 1; min-height: 220px; width: 100%;
-    margin-top: clamp(28px, 7vh, 72px);  /* воздух между шапкой и эквалайзером */
+    flex: 1; min-height: 0; width: 100%;
+    margin-top: clamp(20px, 7vh, 72px);  /* воздух между шапкой и эквалайзером */
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 10px;
   }
-  .viz { width: 100%; max-width: 360px; height: clamp(110px, 24vh, 200px); }
+  .viz { width: 100%; max-width: 360px; height: clamp(80px, 24vh, 200px); min-height: 0; }
   .viz canvas { width: 100%; height: 100%; display: block; }
   .play {
     border: 0; background: none; padding: 18px; cursor: pointer; color: var(--text);
@@ -82,7 +95,7 @@
   .play:disabled { opacity: .25; cursor: default; }
 
   /* --- низ: задержка, inset-группа с буфером, подсказка --- */
-  .bottom { width: 100%; }
+  .bottom { width: 100%; flex: none; }
   .lat {
     text-align: center; font-size: 13px; color: var(--tertiary);
     margin-bottom: 14px; font-variant-numeric: tabular-nums;
@@ -98,6 +111,7 @@
   input[type=range] {
     -webkit-appearance: none; appearance: none; width: 100%; height: 28px;
     background: transparent; cursor: pointer; --p: 0%;
+    touch-action: none;  /* палец на ползунке тянет ползунок, а не страницу */
   }
   input[type=range]::-webkit-slider-runnable-track {
     height: 4px; border-radius: 2px;
@@ -118,6 +132,17 @@
 
   #sink { display: none; }
 
+  /* Совсем низкие экраны: ужимаем шапку и кнопку, чтобы всё влезло без скролла
+     и эквалайзеру осталось место. */
+  @media (max-height: 620px) {
+    .top { margin-top: 0; }
+    .art { width: 64px; height: 64px; border-radius: 16px; }
+    h1 { margin-top: 12px; font-size: 20px; }
+    .stage { margin-top: 14px; }
+    .play { padding: 10px; }
+    .play svg { width: 56px; height: 56px; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .dot.live { animation: none !important; }
   }
@@ -126,13 +151,7 @@
 <body>
   <main class="page">
     <header class="top">
-      <div class="art" aria-hidden="true">
-        <svg class="art-glyph" viewBox="0 0 24 24">
-          <path d="M3 9v6h4l5 5V4L7 9H3z"/>
-          <path d="M16.5 12A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12z"/>
-          <path d="M14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
-        </svg>
-      </div>
+      <img class="art" src="/icon-192.png" width="96" height="96" alt="" aria-hidden="true" />
       <h1>Звук с ПК</h1>
       <p class="status"><span id="dot" class="dot"></span><span id="statusText">Подключение…</span></p>
     </header>
@@ -167,6 +186,29 @@
   </main>
 
 <script>
+// --- Никакого скролла и зума: страница ведёт себя как экран приложения. ---
+// Safari на iOS игнорирует user-scalable=no, поэтому глушим жесты руками:
+// resize-жест (pinch), «резинку» при протяжке и зум по двойному тапу.
+document.addEventListener('touchmove', (e) => {
+  if (e.touches.length > 1) { e.preventDefault(); return; }        // pinch-zoom
+  const t = e.target;
+  if (!(t instanceof Element) || !t.closest('input[type=range]')) e.preventDefault();
+}, { passive: false });
+for (const t of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+}
+document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
+// Старые Safari трактуют второй тап в пределах 350 мс как «зум» — съедаем его,
+// но только вне кнопок и ползунка, чтобы не сломать быстрые нажатия play/pause.
+let lastTap = 0;
+document.addEventListener('touchend', (e) => {
+  const now = Date.now();
+  const t = e.target;
+  const control = t instanceof Element && t.closest('button, input');
+  if (!control && now - lastTap < 350) e.preventDefault();
+  lastTap = now;
+}, { passive: false });
+
 const playBtn = document.getElementById('play');
 const dot = document.getElementById('dot');
 const statusText = document.getElementById('statusText');
@@ -320,7 +362,10 @@ function setupMediaSession() {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: 'Звук ПК',
       artist: 'Sound Stream',
-      artwork: [{ src: artworkURL(), sizes: '256x256', type: 'image/png' }]
+      artwork: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png' }
+      ]
     });
     navigator.mediaSession.playbackState = 'playing';
     navigator.mediaSession.setActionHandler('play', () => {
@@ -331,19 +376,6 @@ function setupMediaSession() {
     navigator.mediaSession.setActionHandler('pause', stopPlayback);
     navigator.mediaSession.setActionHandler('stop', stopPlayback);
   } catch (e) {}
-}
-
-// Простая обложка для локскрина (рисуем на лету, без внешних файлов).
-let _artwork = null;
-function artworkURL() {
-  if (_artwork) return _artwork;
-  const c = document.createElement('canvas');
-  c.width = c.height = 256;
-  const x = c.getContext('2d');
-  x.fillStyle = '#1c1c1e'; x.fillRect(0, 0, 256, 256);
-  x.font = '150px serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-  x.fillText('🔊', 128, 140);
-  return (_artwork = c.toDataURL('image/png'));
 }
 
 // Int16 PCM (моно) -> запланированное воспроизведение через Web Audio.

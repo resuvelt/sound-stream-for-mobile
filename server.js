@@ -31,6 +31,9 @@ const app = express();
 const listenPage = (req, res) => res.sendFile(path.join(__dirname, 'public', 'listen.html'));
 app.get('/', listenPage);
 app.get('/listen', listenPage);
+// Иконки (favicon, apple-touch-icon, иконки для «на экран Домой») и манифест.
+app.use(express.static(path.join(__dirname, 'public'), { index: false, maxAge: '1d' }));
+app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'public', 'favicon.png')));
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
