@@ -1,169 +1,43 @@
 # 🔊 Sound Stream
 
-**Слушай звук с компьютера на телефоне — прямо в браузере, без приложений.**
+Listen to your Windows PC's audio on your phone, right in the browser. No app to install.
 
-Программа захватывает системный звук ПК (всё, что играет из колонок) и транслирует
-его на телефон по локальной сети. Открыл ссылку — и слушаешь.
+A single `sound-stream.exe` sits in the system tray, captures everything your speakers play
+(WASAPI loopback), and streams it over Wi-Fi to any iPhone or Android browser.
 
-<p align="center">
-  <img alt="Rust" src="https://img.shields.io/badge/Rust-1.85%2B-000000?logo=rust&logoColor=white">
-  <img alt="Platform" src="https://img.shields.io/badge/Windows-WASAPI%20loopback-0078D6?logo=windows&logoColor=white">
-  <img alt="iPhone" src="https://img.shields.io/badge/iPhone-поддерживается-000000?logo=apple&logoColor=white">
-  <img alt="Android" src="https://img.shields.io/badge/Android-поддерживается-3DDC84?logo=android&logoColor=white">
-</p>
+## Run
 
----
+1. Build it once with [Rust](https://rustup.rs) 1.85+ (MSVC toolchain):
 
-## 💡 Кому пригодится
+   ```bash
+   cargo build --release
+   ```
 
-- 🎧 **Беспроводные наушники не подключаются к ПК** — подключи их к телефону, а звук компьютера направь на телефон
-- 🔈 **Нужна быстрая колонка для ПК или ноутбука** — превращает телефон в внешний динамик за секунды
-- 🛋️ **Хочешь отойти от компьютера** — слушай то, что играет на ПК, не вставая
+2. Run `target\release\sound-stream.exe`. There's no console window, just a speaker icon in the tray.
+3. On your phone, open **`http://sound-stream.local:47823/`** (same Wi-Fi) and tap play.
 
-## ✨ Возможности
+The exe is fully standalone: the player page and the C runtime are built in. Copy it to any
+Windows 10/11 x64 PC and run it, with nothing else to install. On first launch, allow it through
+Windows Firewall for private networks.
 
-- 🪟 **Один exe без консоли** — запускается двойным кликом и живёт значком у часов
-- 🎧 **Системный звук целиком** — захват всего, что играет из колонок ПК
-- 🔁 **Смена устройства на лету** — подключил наушники или колонку, и захват сам переключился на новое устройство вывода
-- 📱 **iPhone и Android** — работает в любом телефоне, ставить приложение не нужно
-- 📌 **Постоянный адрес** — `http://sound-stream.local` по mDNS/Bonjour, не зависит от смены IP
-- ⚡ **Захват по требованию** — поднимается, когда подключается первый слушатель, и гаснет, когда все ушли
-- 🌙 **Аккуратный плеер** — плоский тёмный интерфейс в духе нативных iOS-приложений
-- 🪶 **Лёгкий** — ~1,6 МБ, страница плеера вшита в exe, никаких Node.js и зависимостей
+## Tray menu
 
-## 📦 Требования
+Right-click the icon for (the UI is in Russian):
 
-- **Windows 10/11 x64** (захват построен на WASAPI loopback) — для запуска больше ничего не нужно
-- ПК и телефон в **одной Wi-Fi сети**
-- Только для сборки из исходников — [Rust](https://rustup.rs) 1.85+ (MSVC toolchain)
+- status: listener count and the device being captured
+- the phone address (click to copy) and fallback IP addresses
+- open the player on this PC (also a double-click on the icon)
+- start with Windows (on/off)
+- the log
+- restart and exit
 
-## 🚀 Запуск
+## Notes
 
-Собери exe:
+- Capture starts with the first listener, stops when everyone leaves, and follows changes of the default output device.
+- `sound-stream.local` is announced via mDNS, so the bookmark survives DHCP IP changes. If it doesn't resolve, check that your router has client/AP isolation turned off, or use the IP address from the tray menu.
+- Optional environment variables: `PORT` (default `47823`) and `MDNS_NAME` (default `sound-stream`).
+- Log: `%LOCALAPPDATA%\sound-stream\server.log`.
 
-```bash
-cargo build --release
-```
+## License
 
-и запусти `target\release\sound-stream.exe` двойным кликом. Окна не будет: у часов
-появится значок динамика и всплывёт уведомление с адресом для телефона:
-
-```
-http://sound-stream.local:47823/
-```
-
-Exe самодостаточный: C-рантайм вшит (`.cargo/config.toml`), страница и иконки тоже,
-так что его можно просто скопировать на другой ПК с Windows 10/11 и запустить —
-без Rust, Node.js, Visual C++ Redistributable и установки. Если exe скачан из
-интернета, Windows SmartScreen может предупредить о неизвестном издателе:
-«Подробнее» → «Выполнить в любом случае».
-
-> **Брандмауэр Windows.** При первом запуске Windows может спросить, разрешить ли
-> `sound-stream.exe` доступ к сети. Разреши для **частных** сетей, иначе телефон не
-> достучится. Если домашняя Wi-Fi помечена как «Общедоступная», разреши и для неё
-> или переключи сеть на «Частную».
-
-## 🎛 Значок в трее
-
-Правый клик по значку открывает меню:
-
-- **статус** — работает ли сервер, сколько слушателей и с какого устройства идёт звук
-- **⭐ постоянный адрес `http://sound-stream.local:PORT/`** — клик копирует ссылку (не зависит от смены IP); ниже — адрес по IP как запасной
-- **Открыть на этом ПК** (или двойной клик по значку) — откроет плеер в браузере
-- **Запускать при входе в Windows** — галочка автозапуска
-- **Открыть журнал**
-- **Перезапустить**
-- **Выход**
-
-Повторный запуск exe не создаёт вторую копию, а напоминает о себе уведомлением.
-
-## 🔄 Автозапуск
-
-Галочка **«Запускать при входе в Windows»** в меню трея прописывает exe в
-`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, права администратора не нужны.
-Если exe перенести в другую папку, при следующем запуске путь обновится сам.
-
-Переход со старой версии (Node.js + PowerShell): при первом запуске exe найдёт её
-ярлык `sound-stream.lnk` в «Автозагрузке» и заменит его автозапуском exe. Старый
-трей перед этим закрой: меню значка → «Выход».
-
-> **Примечание.** Захват звука (WASAPI loopback) идёт в вашей пользовательской
-> сессии, поэтому программа стартует при **входе в систему**, а не как служба
-> Windows под `SYSTEM` (там системный звук недоступен).
-
-## 📌 Постоянный адрес (не зависит от смены IP)
-
-IP компьютера в домашней сети может меняться (DHCP), и закладка вида
-`http://192.168.x.x` однажды перестаёт открываться. Чтобы этого не случалось,
-программа объявляет себя в локальной сети по **mDNS/Bonjour** под постоянным именем:
-
-```
-http://sound-stream.local:47823/
-```
-
-Добавь этот адрес **один раз** в закладку (или на экран «Домой») на телефоне — он
-продолжит работать, даже когда IP компьютера сменится. iPhone и Mac понимают
-`.local` из коробки (Bonjour), большинство Android тоже.
-
-> **Если `.local` не открывается:**
-> - Телефон и ПК должны быть в **одной сети**, а в роутере не должна быть включена
->   изоляция клиентов (*AP / client isolation*): она блокирует mDNS между устройствами.
-> - Брандмауэр должен пропускать `sound-stream.exe` во входящих (UDP 5353), обычно это
->   то же разрешение, что и для основного порта.
-> - Надёжный запасной вариант — закрепить за ПК статический адрес в роутере
->   (DHCP-резервирование) и пользоваться `http://IP:47823/`.
-
-## ⚙️ Настройки
-
-Переменные окружения (необязательно):
-
-| Переменная | По умолчанию | Что задаёт |
-|------------|--------------|------------|
-| `PORT` | `47823` | порт HTTP/WebSocket |
-| `MDNS_NAME` | `sound-stream` | имя в адресе `http://<имя>.local:PORT/` |
-
-Журнал пишется в `%LOCALAPPDATA%\sound-stream\server.log` (меню → «Открыть журнал»),
-он пригодится, если что-то пойдёт не так. Отладочная сборка (`cargo run`) дополнительно
-показывает консоль с тем же журналом.
-
-## ⚙️ Как это устроено
-
-```
-  ПК (колонки)
-      │  WASAPI loopback (устройство вывода по умолчанию)
-      ▼
-  capture.rs ──► даунмикс в моно Int16 PCM, кадры по 10 мс
-      │
-      ▼
-  server.rs ──► HTTP + WebSocket (axum)
-      │  бинарные PCM-кадры
-      ▼
-  📱 listen.html ──► воспроизведение в браузере телефона
-```
-
-Захват открывается **по требованию**: при первом подключившемся слушателе программа
-поднимает loopback, рассылает формат и звук, а когда слушателей не остаётся —
-останавливает захват. Раз в секунду она проверяет устройство вывода по умолчанию
-и при смене переключается на новое.
-
-## 📁 Структура
-
-| Файл | Назначение |
-|------|------------|
-| `src/main.rs` | Запуск: один экземпляр, потоки сервера, захвата и mDNS, трей |
-| `src/capture.rs` | Захват системного звука через WASAPI loopback |
-| `src/server.rs` | HTTP + WebSocket сервер, раздача страницы и звука |
-| `src/mdns.rs` | Постоянный адрес `<name>.local` по mDNS/Bonjour |
-| `src/tray.rs` | Значок и меню в трее, уведомления |
-| `src/autostart.rs` | Автозапуск при входе в Windows |
-| `src/net.rs` | LAN-адреса ПК без виртуальных адаптеров |
-| `public/listen.html` | Страница-плеер для телефона (вшивается в exe) |
-| `assets/sound-stream.ico` | Иконка exe и трея |
-
-## 📄 Лицензия
-
-Распространяется под лицензией **MIT** — используй, изменяй и распространяй свободно.
-
----
-
-<p align="center"><sub>Проект предоставляется «как есть», без каких-либо гарантий. Автор не несёт ответственности за любой ущерб или последствия использования.</sub></p>
+MIT
