@@ -8,11 +8,10 @@ A single `sound-stream.exe` sits in the system tray, captures everything your sp
 ## Run
 
 1. Download `sound-stream.exe` from the latest release (Releases).
-2. Run it. There's no console window, just a speaker icon in the tray.
+2. Run it. A speaker icon appears in the system tray.
 3. On your phone, open **`http://sound-stream.local:47823/`** (same Wi-Fi) and tap play.
 
-The exe is fully standalone. It runs on any Windows 10/11 x64 PC with nothing to install:
-no Node.js, no Visual C++ runtime.
+It works on Windows 10/11 x64 with nothing to install.
 
 - **SmartScreen** may warn about an unknown publisher. Click **More info → Run anyway**.
 - **Windows Firewall** may ask on first launch. Allow it for private networks.
