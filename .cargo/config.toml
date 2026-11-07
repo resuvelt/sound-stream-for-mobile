@@ -1,0 +1,4 @@
+# Вшиваем C-рантайм (VCRUNTIME140.dll) прямо в exe: он запускается на чистой
+# Windows 10/11 без установки Visual C++ Redistributable.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
