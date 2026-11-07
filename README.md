@@ -7,18 +7,28 @@ A single `sound-stream.exe` sits in the system tray, captures everything your sp
 
 ## Run
 
-1. Build it once with [Rust](https://rustup.rs) 1.85+ (MSVC toolchain):
-
-   ```bash
-   cargo build --release
-   ```
-
-2. Run `target\release\sound-stream.exe`. There's no console window, just a speaker icon in the tray.
+1. Download `sound-stream.exe` from the latest release (Releases).
+2. Run it. There's no console window, just a speaker icon in the tray.
 3. On your phone, open **`http://sound-stream.local:47823/`** (same Wi-Fi) and tap play.
 
-The exe is fully standalone: the player page and the C runtime are built in. Copy it to any
-Windows 10/11 x64 PC and run it, with nothing else to install. On first launch, allow it through
-Windows Firewall for private networks.
+The exe is fully standalone. It runs on any Windows 10/11 x64 PC with nothing to install:
+no Node.js, no Visual C++ runtime.
+
+- **SmartScreen** may warn about an unknown publisher. Click **More info → Run anyway**.
+- **Windows Firewall** may ask on first launch. Allow it for private networks.
+
+## Build from source
+
+```bash
+cargo build --release
+```
+
+This needs [Rust](https://rustup.rs) 1.85+ with the MSVC toolchain and gives you
+`target\release\sound-stream.exe`.
+
+To publish a release, push an annotated version tag (`git tag -a 2.1 && git push origin 2.1`).
+GitHub Actions then builds the exe and attaches it to the release, using the tag message as the
+release notes.
 
 ## Tray menu
 

@@ -1,0 +1,54 @@
+# Push a version tag (e.g. `git tag -a 2.1 && git push origin 2.1`) and this
+# builds sound-stream.exe on Windows and publishes a GitHub release with it.
+# The release notes are taken from the annotated tag's message.
+name: Release
+
+on:
+  push:
+    tags: ['[0-9]*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Check the exe is standalone
+        shell: bash
+        run: |
+          python - target/release/sound-stream.exe <<'EOF'
+          import struct, sys
+          d = open(sys.argv[1], 'rb').read()
+          pe = struct.unpack_from('<I', d, 0x3c)[0]
+          nsec, optsz = struct.unpack_from('<H', d, pe + 6)[0], struct.unpack_from('<H', d, pe + 20)[0]
+          opt = pe + 24
+          secs = [struct.unpack_from('<8sIIII', d, opt + optsz + i * 40) for i in range(nsec)]
+          off = lambda r: next(r - va + p for _, vs, va, rs, p in secs if va <= r < va + max(vs, rs))
+          dlls, p = [], off(struct.unpack_from('<I', d, opt + 120)[0])
+          while (n := struct.unpack_from('<I', d, p + 12)[0]):
+              o = off(n); dlls.append(d[o:d.index(b'\0', o)].decode().lower()); p += 20
+          bad = [x for x in dlls if x.startswith(('vcruntime', 'msvcp', 'api-ms-win-crt'))]
+          gui = struct.unpack_from('<H', d, opt + 68)[0] == 2
+          print('imports:', ', '.join(sorted(set(dlls))))
+          sys.exit(f'needs runtime DLLs {bad}' if bad else None if gui else 'not a GUI-subsystem exe')
+          EOF
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          git tag -l --format='%(contents)' "$TAG" > notes.md
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" target/release/sound-stream.exe --clobber
+          else
+            gh release create "$TAG" target/release/sound-stream.exe --title "$TAG" --notes-file notes.md
+          fi
