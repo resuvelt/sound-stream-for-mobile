@@ -1,4 +1,7 @@
-# Dependencies
+# Rust build output
+/target/
+
+# Leftovers of the old Node.js version
 node_modules/
 
 # Logs
