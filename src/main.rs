@@ -1,8 +1,8 @@
 //! sound-stream — системный звук ПК на телефон прямо в браузере.
 //!
-//! Одно приложение без окна консоли: значок в трее, HTTP + WebSocket сервер
-//! со вшитой страницей плеера, захват WASAPI loopback и постоянный адрес
-//! `<имя>.local` по mDNS.
+//! Одно приложение без окна консоли: окно с QR-кодом и настройками, значок
+//! в трее, HTTP + WebSocket сервер со вшитой страницей плеера, захват WASAPI
+//! loopback и постоянный адрес `<имя>.local` по mDNS.
 
 // Релизная сборка — GUI-подсистема: никакого окна консоли. В отладочной
 // консоль остаётся, чтобы видеть журнал прямо в терминале.
@@ -19,6 +19,7 @@ mod net;
 mod server;
 mod state;
 mod tray;
+mod ui;
 mod wide;
 
 use std::net::Ipv4Addr;
@@ -63,11 +64,16 @@ impl Config {
 }
 
 fn main() {
-    // `--restart` передаёт сам себе пункт меню «Перезапустить»: новый процесс
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let flag = |f: &str| args.iter().any(|a| a == f);
+    // `--restart` передаёт сам себе кнопка «Перезапустить»: новый процесс
     // дожидается, пока старый освободит блокировку, вместо того чтобы выйти.
-    let restarted = std::env::args().any(|a| a == "--restart");
+    let restarted = flag(instance::RESTART);
+    // Окно — при запуске вручную. Из автозапуска и при перезапуске — только
+    // значок в трее (перезапуск из открытого окна передаёт `--show`).
+    let show_window = flag(instance::SHOW) || !(restarted || flag(autostart::FLAG));
     let Some(_instance) = instance::acquire(restarted) else {
-        // Уже запущено — просим работающий экземпляр показать подсказку.
+        // Уже запущено — просим работающий экземпляр показать окно.
         tray::poke_running_instance();
         return;
     };
@@ -83,13 +89,14 @@ fn main() {
     let migrated = autostart::migrate_legacy();
     autostart::refresh_path();
 
-    let (app, capture_rx) = state::App::new(cfg, restarted, migrated);
+    let (app, capture_rx) = state::App::new(cfg, restarted, migrated, show_window);
     let app = Arc::new(app);
     let capture = capture::spawn(app.clone(), capture_rx);
     server::spawn(app.clone());
     mdns::spawn(app.clone());
 
     let exit = tray::run(app.clone());
+    let reopen = ui::window::is_open();
     log!("выход: {:?}", exit);
 
     // Аккуратно гасим захват (не дольше пары секунд — выход не должен зависать).
@@ -100,7 +107,7 @@ fn main() {
     }
 
     if exit == tray::Exit::Restart {
-        instance::spawn_restart();
+        instance::spawn_restart(reopen);
     }
     std::process::exit(0);
 }

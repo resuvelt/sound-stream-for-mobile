@@ -110,6 +110,10 @@ fn announce(app: &App) {
         log!("  По IP (запасной вариант): {}", cfg.ip_url(ip));
     }
 
+    // Окно открыто и само показывает адрес — уведомление лишнее.
+    if app.show_window && !app.migrated {
+        return;
+    }
     let title = if app.restarted {
         "sound-stream перезапущен"
     } else {

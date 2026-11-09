@@ -1,5 +1,5 @@
 //! Общее состояние: слушатели, захват, статус сервера. Связывает поток захвата,
-//! WebSocket-сервер и трей.
+//! WebSocket-сервер и интерфейс (окно, трей).
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Mutex};
@@ -37,6 +37,8 @@ pub struct App {
     pub restarted: bool,
     /// При старте старый ярлык автозапуска (Node + PowerShell) заменён на exe.
     pub migrated: bool,
+    /// При старте открывается окно (запуск вручную, а не из автозапуска).
+    pub show_window: bool,
 
     /// PCM-кадры (моно Int16 LE, ~10 мс) для всех слушателей.
     pub audio: broadcast::Sender<Bytes>,
@@ -51,7 +53,12 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(cfg: Config, restarted: bool, migrated: bool) -> (Self, mpsc::Receiver<CaptureCmd>) {
+    pub fn new(
+        cfg: Config,
+        restarted: bool,
+        migrated: bool,
+        show_window: bool,
+    ) -> (Self, mpsc::Receiver<CaptureCmd>) {
         // ~0,3 с аудио на слушателя: кто отстал сильнее (медленный Wi-Fi) —
         // пропускает кадры, а не копит задержку.
         let (audio, _) = broadcast::channel(32);
@@ -61,6 +68,7 @@ impl App {
             cfg,
             restarted,
             migrated,
+            show_window,
             audio,
             events,
             listeners: AtomicUsize::new(0),

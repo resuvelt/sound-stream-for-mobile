@@ -14,6 +14,8 @@ use crate::wide::{from_ptr, wide};
 
 const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const NAME: &str = "sound-stream";
+/// С этим аргументом exe запускается при входе: только значок, без окна.
+pub const FLAG: &str = "--autostart";
 
 /// Команда, записанная в автозапуск (если есть).
 fn current() -> Option<String> {
@@ -45,15 +47,25 @@ pub fn is_enabled() -> bool {
 }
 
 pub fn set(enabled: bool) -> bool {
+    if enabled {
+        let Ok(exe) = std::env::current_exe() else {
+            return false;
+        };
+        write(Some(&exe))
+    } else {
+        write(None)
+    }
+}
+
+/// Записывает автозапуск `exe` (или удаляет его, если `None`).
+fn write(exe: Option<&Path>) -> bool {
     let key = wide(RUN);
     let name = wide(NAME);
+    let enabled = exe.is_some();
     // SAFETY: строки нуль-терминированы, размер данных — в байтах.
     let r = unsafe {
-        if enabled {
-            let Ok(exe) = std::env::current_exe() else {
-                return false;
-            };
-            let cmd = wide(&format!("\"{}\"", exe.display()));
+        if let Some(exe) = exe {
+            let cmd = wide(&format!("\"{}\" {FLAG}", exe.display()));
             RegSetKeyValueW(
                 HKEY_CURRENT_USER,
                 key.as_ptr(),
@@ -85,13 +97,30 @@ pub fn set(enabled: bool) -> bool {
 }
 
 /// exe перенесли в другую папку — автозапуск указывал бы в пустоту. Чиним.
+/// Заодно дописываем `--autostart` в запись прежней версии, иначе при каждом
+/// входе в Windows открывалось бы окно.
 pub fn refresh_path() {
-    if let Some(cmd) = current() {
-        let path = cmd.trim().trim_matches('"');
-        if !Path::new(path).exists() {
-            log!("автозапуск указывал на несуществующий {path} — обновляю путь");
-            set(true);
-        }
+    let Some(cmd) = current() else {
+        return;
+    };
+    let path = PathBuf::from(exe_of(&cmd));
+    if !path.exists() {
+        log!(
+            "автозапуск указывал на несуществующий {} — обновляю путь",
+            path.display()
+        );
+        set(true);
+    } else if !cmd.split_whitespace().any(|a| a == FLAG) {
+        write(Some(&path));
+    }
+}
+
+/// Путь к exe из команды автозапуска (в кавычках или без).
+fn exe_of(cmd: &str) -> &str {
+    let c = cmd.trim();
+    match c.strip_prefix('"') {
+        Some(rest) => rest.split('"').next().unwrap_or(rest),
+        None => c.split_whitespace().next().unwrap_or(c),
     }
 }
 

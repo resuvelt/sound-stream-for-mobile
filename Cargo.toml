@@ -15,15 +15,22 @@ path = "src/main.rs"
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "ws"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+qrcodegen = "1.8"
 socket2 = { version = "0.6", features = ["all"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros"] }
+windows-numerics = "0.3"
 
 [dependencies.windows]
-# Только WASAPI (COM-интерфейсы); всё остальное — через windows-sys.
+# COM-интерфейсы: WASAPI и рисование окон (Direct2D + DirectWrite);
+# всё остальное — через windows-sys.
 version = "0.62"
 features = [
   "Win32_Devices_FunctionDiscovery",
   "Win32_Foundation",
+  "Win32_Graphics_Direct2D",
+  "Win32_Graphics_Direct2D_Common",
+  "Win32_Graphics_DirectWrite",
+  "Win32_Graphics_Dxgi_Common",
   "Win32_Media_Audio",
   "Win32_Security",
   "Win32_System_Com",
@@ -37,6 +44,7 @@ features = [
 version = "0.61"
 features = [
   "Win32_Foundation",
+  "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
   "Win32_NetworkManagement_IpHelper",
   "Win32_NetworkManagement_Ndis",
@@ -49,6 +57,9 @@ features = [
   "Win32_System_Registry",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
+  "Win32_UI_Controls",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ]

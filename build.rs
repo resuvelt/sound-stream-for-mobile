@@ -1,5 +1,5 @@
 // Вшивает в exe иконку, сведения о версии и манифест (DPI-осведомлённость,
-// чтобы меню трея было чётким на экранах с масштабированием).
+// чтобы окно и панель трея были чёткими на экранах с масштабированием).
 
 const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
