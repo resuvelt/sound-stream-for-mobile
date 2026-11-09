@@ -14,3 +14,7 @@ Thumbs.db
 
 # Local tooling
 .claude/
+graft/
+# trail: only the learnings belong in the repo
+.trail/*
+!.trail/learnings/
